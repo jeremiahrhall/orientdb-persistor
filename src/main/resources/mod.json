@@ -1,0 +1,12 @@
+{
+    "main": "org.vertx.mods.OrientDBPersistor",
+    "worker": true,
+    "multi-threaded": true,
+
+    "description":"OrientDB persistor module for Vert.x",
+    "licenses": ["The Apache Software License Version 2.0"],
+    "author": "jeremiahrhall",
+    "keywords": ["orientdb", "orient", "database", "databases", "persistence", "json",
+        "nosql", "graphdb", "graph", "document", "documentdb"],
+    "homepage": "https://github.com/jeremiahrhall/mod-orientdb-persistor"
+}
