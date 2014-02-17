@@ -1,5 +1,7 @@
 # OrientDB Persistor
 
+## Module is in early dev phase...
+
 This module allows data to be saved, retrieved, searched for, and deleted in an OrientDB database. It also provides an interface to OrientDB's schema configuration.
 
 This module is modeled after the MongoDB persistor for Vert.x. Since OrientDB is a hybrid graph-document database the semantics for storing documents (records) is similar.
