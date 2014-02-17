@@ -1,5 +1,7 @@
 package org.vertx.mods.orientdb.test.integration.java;
 
+import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.vertx.java.core.AsyncResult;
 import org.vertx.java.core.AsyncResultHandler;
@@ -27,23 +29,26 @@ public class PersistorTest extends TestVerticle {
   private EventBus eb;
 
   @Override
+  @Before
   public void start() {
     eb = vertx.eventBus();
-    /*JsonObject config = new JsonObject();
-    config.putString("address", "test.persistor");
-    config.putString("db_name", System.getProperty("vertx.mongo.database", "test_db"));
-    config.putString("host", System.getProperty("vertx.mongo.host", "localhost"));
-    config.putNumber("port", Integer.valueOf(System.getProperty("vertx.mongo.port", "27017")));
-    String username = System.getProperty("vertx.mongo.username");
-    String password = System.getProperty("vertx.mongo.password");
+    JsonObject config = new JsonObject();
+    config.putString("address", "test.orientpersistor");
+    config.putString("db_name", System.getProperty("vertx.orient.database", "persistorTest"));
+    config.putString("host", System.getProperty("vertx.orient.host", "localhost"));
+    config.putString("port", System.getProperty("vertx.orient.port", "2424"));
+    // TODO: Get these into system properties outside of this source code?
+    String username = System.getProperty("vertx.orient.username", "root");
+    String password = System.getProperty("vertx.orient.password", "AD27EAF821246F758C7D50BFF9EBC95FE4712EDB327CA98D8C72DF8FECB65568");
     if (username != null) {
       config.putString("username", username);
       config.putString("password", password);
     }
-    config.putBoolean("fake", false);*/
-    container.deployModule(System.getProperty("vertx.modulename"), null, 1, new AsyncResultHandler<String>() {
+    config.putBoolean("fake", false);
+    container.deployModule(System.getProperty("vertx.modulename"), config, 1, new AsyncResultHandler<String>() {
       public void handle(AsyncResult<String> ar) {
         if (ar.succeeded()) {
+          System.out.println("Starting...");
           PersistorTest.super.start();
         } else {
           ar.cause().printStackTrace();
@@ -53,18 +58,35 @@ public class PersistorTest extends TestVerticle {
   }
 
   @Test
+  public void testAddVertex() throws Exception {
+
+    JsonObject getEdgeMessage = new JsonObject().putString("action", "add_vertex")
+        .putString("class", "edgeClass").putObject("criteria", new JsonObject());
+
+    eb.send("test.orientpersistor", getEdgeMessage, new Handler<Message<JsonObject>>() {
+      public void handle(Message<JsonObject> reply) {
+        System.out.println("reply body:" + reply.body().toString());
+        assertEquals("true", "true");
+        testComplete();
+      }
+    });
+  }
+
+  /*@Test
   public void testPersistor() throws Exception {
 
     JsonObject getEdgeMessage = new JsonObject().putString("action", "get_edge")
         .putString("class", "edgeClass").putObject("criteria", new JsonObject());
 
-    eb.send("vertx.orientdbpersistor", getEdgeMessage, new Handler<Message<JsonObject>>() {
+    eb.send("test.orientpersistor", getEdgeMessage, new Handler<Message<JsonObject>>() {
       public void handle(Message<JsonObject> reply) {
+        System.out.println(reply.body().toString());
         assertEquals("true", "true");
+        testComplete();
       }
     });
 
-    /*
+
     //First delete everything
     JsonObject json = new JsonObject().putString("collection", "testcoll")
         .putString("action", "delete").putObject("matcher", new JsonObject());
@@ -100,8 +122,8 @@ public class PersistorTest extends TestVerticle {
 
 
       }
-    });*/
-  }
+    });
+  }*/
 
   /*
   @Test

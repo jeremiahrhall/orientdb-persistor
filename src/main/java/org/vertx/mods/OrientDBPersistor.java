@@ -1,15 +1,19 @@
 package org.vertx.mods;
 
-import com.tinkerpop.blueprints.Contains;
-import com.tinkerpop.blueprints.Predicate;
-import com.tinkerpop.blueprints.TransactionalGraph;
+import com.tinkerpop.blueprints.*;
 import com.tinkerpop.blueprints.impls.orient.OrientGraph;
+import com.tinkerpop.blueprints.impls.orient.OrientGraphFactory;
+import com.tinkerpop.blueprints.impls.orient.OrientVertex;
 import org.vertx.java.busmods.BusModBase;
 import org.vertx.java.core.Handler;
 
 import org.vertx.java.core.eventbus.Message;
 import org.vertx.java.core.json.JsonObject;
 import org.vertx.java.platform.Container;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Main module class for persisting objects sent on the Vert.x Event Bus with the OrientDB
@@ -79,10 +83,47 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
   protected String host;
   protected String port;
   protected String dbName;
-  protected TransactionalGraph graph;
+  protected String user;
+  protected String password;
+
+  protected OrientGraphFactory factory;
   protected OrientGraph og;
   protected Container c;
 
+  /**
+   * start()
+   *
+   * Perpare the verticle
+   *
+   * - connect to database
+   * - register handlers
+   *
+   */
+  @Override
+  public void start() {
+    super.start();
+
+    address = getOptionalStringConfig("address", "vertx.orientdbpersistor");
+    host = getOptionalStringConfig("host", "localhost");
+    port = getOptionalStringConfig("port", "2424");
+    dbName = getMandatoryStringConfig("db_name");
+    user = getMandatoryStringConfig("username");
+    password = getMandatoryStringConfig("password");
+
+    logger.info("Attempting connection");
+
+    factory = new OrientGraphFactory(getConnectionUrl(), user, password);
+
+    logger.info("Connected");
+
+    eb.registerHandler(address, this);
+
+    //get connection params for orientdb
+
+    //connect to orientdb
+
+    //register with event bus
+  }
 
   /**
    * getConnectionUrl
@@ -242,6 +283,7 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
 
     logger.info("Class:" + clazz);
     logger.info("Criteria:" + criteria);
+    sendOK(message);
   }
 
   private void addEdge(Message<JsonObject> message) {
@@ -263,7 +305,34 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
   }
 
   private void addVertex(Message<JsonObject> message) {
+    try {
+      og = factory.getTx();
+      logger.info("adding vertex");
+      Vertex v = og.addVertex(null);
+      logger.info("new vertex");
+      v.setProperty("name", "Jeremiah");
+      logger.info("set prop");
+      og.commit();
+      logger.info("committed");
+      JsonObject reply = new JsonObject(getElementAsMap(v));
+      logger.info(reply.toString());
+      sendOK(message, reply);
+    } catch (Exception e) {
+      logger.error(e);
+      sendError(message, e.toString());
+      og.rollback();
+    }
+  }
 
+  private Map<String, Object> getElementAsMap(Element element) {
+    Set<String> propKeys = element.getPropertyKeys();
+    Map<String, Object> elMap = new HashMap<String, Object>(propKeys.size());
+
+    for (String key : propKeys) {
+      elMap.put(key, element.getProperty(key));
+    }
+
+    return elMap;
   }
 
   // Index Operation Methods
@@ -320,30 +389,6 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
 
   }
 
-
-
-  /**
-   * start()
-   *
-   * Perpare the verticle
-   *
-   * - connect to database
-   * - register handlers
-   *
-   */
-  @Override
-  public void start() {
-    super.start();
-
-    eb.registerHandler(address, this);
-
-    //get connection params for orientdb
-
-    //connect to orientdb
-
-    //register with event bus
-  }
-
   /**
    * stop()
    *
@@ -353,6 +398,7 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
   @Override
   public void stop() {
     //close connection
+    factory.close();
     super.stop();
   }
 
