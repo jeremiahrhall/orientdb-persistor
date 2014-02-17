@@ -8,5 +8,5 @@
     "author": "jeremiahrhall",
     "keywords": ["orientdb", "orient", "database", "databases", "persistence", "json",
         "nosql", "graphdb", "graph", "document", "documentdb"],
-    "homepage": "https://github.com/jeremiahrhall/mod-orientdb-persistor"
+    "homepage": "https://github.com/jeremiahrhall/orientdb-persistor"
 }
