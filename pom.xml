@@ -39,7 +39,7 @@
         <vertx.version>2.1M5</vertx.version>
         <vertx.testtools.version>2.0.3-final</vertx.testtools.version>
         <junit.version>4.11</junit.version>
-        <orientdb.version>1.7-SNAPSHOT</orientdb.version>
+        <orientdb.version>1.7-rc2-SNAPSHOT</orientdb.version>
 
         <!--Plugin versions-->
         <maven.compiler.plugin.version>3.0</maven.compiler.plugin.version>
@@ -182,8 +182,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${maven.compiler.plugin.version}</version>
                 <configuration>
-                    <source>1.7</source>
-                    <target>1.7</target>
+                    <source>1.8</source>
+                    <target>1.8</target>
                 </configuration>
             </plugin>
             <plugin>

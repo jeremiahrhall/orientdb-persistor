@@ -1,6 +1,10 @@
 package org.vertx.mods;
 
+import com.orientechnologies.orient.core.command.OCommandRequest;
+import com.orientechnologies.orient.graph.gremlin.OCommandGremlin;
+import com.orientechnologies.orient.graph.gremlin.OGremlinHelper;
 import com.tinkerpop.blueprints.*;
+import com.tinkerpop.blueprints.impls.orient.OrientElement;
 import com.tinkerpop.blueprints.impls.orient.OrientGraph;
 import com.tinkerpop.blueprints.impls.orient.OrientGraphFactory;
 import com.tinkerpop.blueprints.impls.orient.OrientVertex;
@@ -8,12 +12,12 @@ import org.vertx.java.busmods.BusModBase;
 import org.vertx.java.core.Handler;
 
 import org.vertx.java.core.eventbus.Message;
+import org.vertx.java.core.json.JsonElement;
 import org.vertx.java.core.json.JsonObject;
 import org.vertx.java.platform.Container;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.io.IOException;
+import java.util.*;
 
 /**
  * Main module class for persisting objects sent on the Vert.x Event Bus with the OrientDB
@@ -72,12 +76,12 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
   // Traversal Actions - implement in v2?
 
   // Gremlin
-  // private static final String GREMLIN_TRAVERSAL = "gremlin_traversal";
+  private static final String GREMLIN_TRAVERSAL = "gremlin_traversal";
 
   // Command Actions - implement in v2?
 
   // URL prefix
-  private static final String REMOTE_PREFIX = "remote:";
+  private static final String REMOTE_PREFIX = "local:";
 
   protected String address = "vertx.orientdbpersistor";
   protected String host;
@@ -102,7 +106,6 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
   @Override
   public void start() {
     super.start();
-
     address = getOptionalStringConfig("address", "vertx.orientdbpersistor");
     host = getOptionalStringConfig("host", "localhost");
     port = getOptionalStringConfig("port", "2424");
@@ -112,7 +115,16 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
 
     logger.info("Attempting connection");
 
-    factory = new OrientGraphFactory(getConnectionUrl(), user, password);
+    factory = new OrientGraphFactory(getConnectionUrl());
+    logger.info("got factory");
+    try {
+      og = factory.getTx();
+      initializeGremlin();
+      logger.info("Successfully connected to database!");
+    } catch (Exception e) {
+      logger.error("Error connecting to database", e);
+    }
+
 
     logger.info("Connected");
 
@@ -123,6 +135,19 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
     //connect to orientdb
 
     //register with event bus
+  }
+
+  /**
+   * initializeGremlin
+   *
+   * Load Gremlin and run a simple query to initialize it
+   *
+   * Query time for first query seems very high so, we do one here to preempt that.
+   */
+  private void initializeGremlin() {
+    OGremlinHelper.global().create();
+    OCommandRequest req  = og.command(new OCommandGremlin("g.v(1)"));
+    req.execute();
   }
 
   /**
@@ -138,15 +163,15 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
    */
   private String getConnectionUrl() {
     StringBuilder sb = new StringBuilder();
-
-    sb.append(REMOTE_PREFIX);
-    sb.append(host);
+    // TODO: decided to make the dbs plocal
+    sb.append("plocal:");
+    /*sb.append(host);
 
     if (port != null) {
       sb.append(":" + port);
-    }
+    }*/
 
-    sb.append("/" + dbName);
+    sb.append("/Users/jeremiahhall/Projects/vertx-workspace/orientdbs/" + dbName);
 
     return sb.toString();
   }
@@ -259,12 +284,30 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
           getIndexedKeys(message);
           break;
 
+        // gremlin traversal
+        case GREMLIN_TRAVERSAL:
+          executeGremlinTraversal(message);
+          break;
+
         default:
           sendError(message, "Invalid action: " + action);
       }
     } catch (Exception e) {
       sendError(message, e.getMessage(), e);
     }
+  }
+
+  // Execute Gremlin Traversal
+  private void executeGremlinTraversal(Message<JsonObject> message) {
+    og = factory.getTx();
+    String traversalScript = message.body().getString("traversal");
+    OCommandRequest req = og.command(new OCommandGremlin(traversalScript));
+    Object output = req.execute();
+
+    if (output instanceof Element)
+      sendOK(message, new JsonObject(getElementAsMap((Element) output)));
+
+    sendOK(message);
   }
 
   // Edge Operation Methods
@@ -287,35 +330,117 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
   }
 
   private void addEdge(Message<JsonObject> message) {
+    try {
+      JsonObject mBody = message.body();
+      String clazz = mBody.getString("class");
+      String cluster = mBody.getString("cluster", null);
+      JsonObject props = mBody.getObject("properties");
+      String inId = mBody.getString("in");
+      String outId = mBody.getString("out");
+      String label = mBody.getString("label");
 
+      og = factory.getTx();
+
+      Vertex in = og.getVertex(inId);
+      Vertex out = og.getVertex(outId);
+
+      Edge newEdge = og.addEdge(null, out, in, label);
+      props.getFieldNames().forEach(
+        (fieldName) ->
+          newEdge.setProperty(fieldName, props.getValue(fieldName))
+      );
+
+      og.commit();
+
+      JsonObject reply = new JsonObject(getEdgeAsMap(newEdge, true));
+
+      sendOK(message, reply);
+    } catch (Exception e) {
+      logger.error(e);
+      sendError(message, e.toString());
+      og.rollback();
+    }
   }
 
   // Vertex Operation Methods
 
   private void saveVertex(Message<JsonObject> message) {
+    try {
+      JsonObject mBody = message.body();
+      String id = mBody.getString("id");
+      JsonObject props = mBody.getObject("properties");
 
+      og = factory.getTx();
+
+      Vertex v = og.getVertex(id);
+      props.getFieldNames().forEach(
+        (fieldName) ->
+          v.setProperty(fieldName, props.getValue(fieldName))
+      );
+
+      og.commit();
+
+      JsonObject reply = new JsonObject(getVertexAsMap(v, true));
+
+      sendOK(message, reply);
+    } catch (Exception e) {
+      logger.error(e);
+      sendError(message, e.toString());
+      og.rollback();
+    }
   }
 
   private void removeVertex(Message<JsonObject> message) {
+    JsonObject mBody = message.body();
+    Map<String, Object> criteria = mBody.getObject("criteria").toMap();
 
+    og = factory.getTx();
+
+    if (criteria.containsKey("id")) {
+      Vertex toRemove = og.getVertex(criteria.get("id"));
+      toRemove.remove();
+    }
+
+    og.commit();
+
+    sendOK(message);
   }
 
   private void getVertex(Message<JsonObject> message) {
+    JsonObject mBody = message.body();
+    Map<String, Object> criteria = mBody.getObject("criteria").toMap();
 
+    JsonObject reply = null;
+
+    og = factory.getTx();
+
+    if (criteria.containsKey("id")) {
+      Vertex get = og.getVertex(criteria.get("id"));
+      reply = new JsonObject(getVertexAsMap(get, true));
+    }
+
+    sendOK(message, reply);
   }
 
   private void addVertex(Message<JsonObject> message) {
     try {
+      JsonObject mBody = message.body();
+      String clazz = mBody.getString("class");
+      String cluster = mBody.getString("cluster", null);
+      JsonObject props = mBody.getObject("properties");
+
       og = factory.getTx();
-      logger.info("adding vertex");
-      Vertex v = og.addVertex(null);
-      logger.info("new vertex");
-      v.setProperty("name", "Jeremiah");
-      logger.info("set prop");
+
+      Vertex newVertex = og.addVertex(clazz, cluster);
+      props.getFieldNames().forEach(
+        (fieldName) ->
+          newVertex.setProperty(fieldName, props.getValue(fieldName))
+      );
+
       og.commit();
-      logger.info("committed");
-      JsonObject reply = new JsonObject(getElementAsMap(v));
-      logger.info(reply.toString());
+
+      JsonObject reply = new JsonObject(getVertexAsMap(newVertex, true));
+
       sendOK(message, reply);
     } catch (Exception e) {
       logger.error(e);
@@ -325,11 +450,77 @@ public class OrientDBPersistor extends BusModBase implements Handler<Message<Jso
   }
 
   private Map<String, Object> getElementAsMap(Element element) {
-    Set<String> propKeys = element.getPropertyKeys();
-    Map<String, Object> elMap = new HashMap<String, Object>(propKeys.size());
+    if (element instanceof Vertex)
+      return getVertexAsMap((Vertex) element, true);
+    else
+      return getEdgeAsMap((Edge) element, true);
+  }
 
-    for (String key : propKeys) {
-      elMap.put(key, element.getProperty(key));
+  private Map<String, Object> getVertexAsMap(Vertex v, boolean includeEdges) {
+    Set<String> propKeys = v.getPropertyKeys();
+    Map<String, Object> elMap = new HashMap<>(5);
+
+    elMap.put("id", v.getId().toString());
+    elMap.put("class", ((OrientElement) v).getRecord().getSchemaClass().getName());
+
+    Map<String, Object> properties = new HashMap<>(propKeys.size());
+
+    propKeys.forEach(
+      (propkey) ->
+        properties.put(propkey, v.getProperty(propkey))
+    );
+
+    elMap.put("properties", properties);
+
+    if (includeEdges) {
+      Iterable<Edge> inEdges = v.getEdges(Direction.IN);
+
+      Map<String, Object> inEdgeMap = new HashMap<>();
+
+      inEdges.forEach(
+        (edge) ->
+          inEdgeMap.put(edge.getLabel(), getEdgeAsMap(edge, false))
+      );
+
+      Iterable<Edge> outEdges = v.getEdges(Direction.OUT);
+
+      Map<String, Object> outEdgeMap = new HashMap<>();
+
+      outEdges.forEach(
+        (edge) ->
+          outEdgeMap.put(edge.getLabel(), getEdgeAsMap(edge, false))
+      );
+
+      elMap.put("in", inEdgeMap);
+      elMap.put("out", outEdgeMap);
+    }
+
+    return elMap;
+  }
+
+  private Map<String, Object> getEdgeAsMap(Edge e, boolean includeVertices) {
+    Set<String> propKeys = e.getPropertyKeys();
+    Map<String, Object> elMap = new HashMap<>(5);
+    elMap.put("id", e.getId().toString());
+    elMap.put("class", ((OrientElement) e).getRecord().getSchemaClass().getName());
+
+    Map<String, Object> properties = new HashMap<>(propKeys.size());
+
+    propKeys.forEach(
+      (propkey) ->
+        properties.put(propkey, e.getProperty(propkey))
+    );
+
+    elMap.put("properties", properties);
+
+    if (includeVertices) {
+      Vertex out = e.getVertex(Direction.OUT);
+
+      elMap.put("out", getVertexAsMap(out, false));
+
+      Vertex in = e.getVertex(Direction.IN);
+
+      elMap.put("in", getVertexAsMap(in, false));
     }
 
     return elMap;
